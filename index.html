@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jejak Asap Sorong | Pemodelan Sebaran Asap Karhutla & Dampak (Kota & Kab. Sorong)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+    <script src="vendor/leaflet/leaflet.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Font Awesome untuk Ikon Geospasial & Fasilitas -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="tampilan.css">
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen w-screen flex flex-col select-none">
+
+    <!-- ==================== 1. HEADER BAR ==================== -->
+    <header class="h-14 bg-slate-900/95 border-b border-slate-800 px-3 sm:px-5 flex items-center justify-between z-30 shadow-lg shrink-0">
+        <!-- Brand & Title -->
+        <div class="flex items-center gap-3">
+            <button id="toggle-left-sidebar" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition" title="Buka/Tutup Panel Kontrol">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md shadow-orange-500/20">
+                    <i class="fas fa-smog text-white text-sm"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-sm sm:text-base tracking-tight text-white">Fokus Titik Asap · Papua Barat Daya</h1>
+                        <span class="hidden md:inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                            PjBL SIG 2026 • GD4103 ITB
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">Angin, plume, PM2,5 dan angka dampak merupakan ilustrasi skenario.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Navigation & Methodology Modal Trigger -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <label class="sr-only" for="app-mode-select">Mode peta</label>
+            <select id="app-mode-select" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-2 focus:outline-none focus:border-teal-500">
+                <option value="manual">Skenario manual</option>
+                <option value="daily">Perkembangan Harian</option>
+            </select>
+            <button id="focus-aoi-btn" type="button" aria-label="Fokus ke wilayah kajian" class="flex items-center gap-1.5 bg-amber-700 hover:bg-amber-600 border border-amber-500/60 text-white text-xs font-semibold px-2.5 py-2 rounded-lg transition" title="Fokus ke wilayah kajian">
+                <i class="fas fa-crosshairs"></i>
+                <span class="sm:hidden">Fokus AOI</span>
+                <span class="hidden sm:inline">Fokus ke wilayah kajian</span>
+            </button>
+
+            <!-- Filter Wilayah Cepat -->
+            <div class="relative">
+                <select id="region-filter" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-2 pr-7 focus:outline-none focus:border-teal-500 cursor-pointer">
+                    <option value="all">📍 Seluruh Wilayah Kajian</option>
+                    <option value="kota_sorong">🏙️ Kota Sorong</option>
+                    <option value="kabupaten_sorong">🌿 Kabupaten Sorong</option>
+                    <optgroup id="district-filter-options" label="Distrik"></optgroup>
+                </select>
+            </div>
+
+            <!-- Tombol Metodologi & Ketidakpastian -->
+            <button id="open-methodology-btn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-teal-400 px-3 py-2 rounded-lg transition">
+                <i class="fas fa-book-open"></i>
+                <span class="hidden md:inline">Metodologi & Ketidakpastian</span>
+            </button>
+
+            <!-- Toggle Right Sidebar (Mobile/Tablet) -->
+            <button id="toggle-right-sidebar" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition xl:hidden" title="Statistik Dampak">
+                <i class="fas fa-chart-bar"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN WORKSPACE ==================== -->
+    <div class="flex-1 flex relative overflow-hidden">
+
+        <!-- ==================== 2. LEFT SIDEBAR (LAYER & SIMULASI ON-THE-FLY) ==================== -->
+        <aside id="left-sidebar" class="w-80 sm:w-85 bg-slate-900/95 backdrop-blur-md border-r border-slate-800 flex flex-col z-20 transition-all duration-300 absolute md:relative h-full">
+            <!-- Tabs Header -->
+            <div class="grid grid-cols-2 border-b border-slate-800 p-1.5 gap-1 bg-slate-950/50 shrink-0">
+                <button id="tab-btn-layers" class="tab-btn active py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-teal-600 text-white shadow">
+                    <i class="fas fa-layer-group"></i> Manajemen Layer
+                </button>
+                <button id="tab-btn-sim" class="tab-btn py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                    <i class="fas fa-sliders-h"></i> Simulasi On-the-Fly
+                </button>
+            </div>
+
+            <section id="daily-source-panel" class="hidden shrink-0 mx-3 mt-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-[11px]">
+                <h3 class="font-semibold text-amber-300 mb-1">Perkembangan Harian · WIT</h3>
+                <p id="daily-auto-source-status" class="text-slate-300 leading-snug">Memuat data hotspot terverifikasi…</p>
+                <div class="flex items-center gap-2 mt-2">
+                    <button id="daily-import-btn" type="button" class="px-2.5 py-1.5 rounded bg-[#8c412c] text-white font-semibold hover:bg-[#a54e32]">Impor CSV FIRMS</button>
+                    <input id="daily-import-file" type="file" accept=".csv,text/csv" class="hidden">
+                </div>
+                <p id="daily-import-status" class="text-slate-400 mt-1.5" role="status">Tanggal akuisisi FIRMS dikonversi dari UTC ke WIT.</p>
+                <label class="flex items-center gap-2 text-slate-200 mt-2">
+                    <input id="daily-hotspots-toggle" type="checkbox" checked class="accent-orange-500">
+                    Tampilkan simbol hotspot
+                </label>
+                <div class="mt-2 border-t border-amber-500/20 pt-2">
+                    <label for="daily-smoke-method" class="block text-slate-300 mb-1">Visualisasi asap harian</label>
+                    <select id="daily-smoke-method" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-slate-100">
+                        <option value="simulation">Simulasi ilustratif dari hotspot harian</option>
+                        <option value="hysplit">Hasil HYSPLIT</option>
+                    </select>
+                    <p id="daily-smoke-status" class="text-amber-200 mt-1.5" role="status">Memeriksa ketersediaan model…</p>
+                    <label class="flex items-center gap-2 text-slate-200 mt-2">
+                        <input id="daily-smoke-toggle" type="checkbox" checked class="accent-orange-500">
+                        Tampilkan gradasi asap
+                    </label>
+                    <div class="flex justify-between text-[10px] text-slate-400 mt-2">
+                        <label for="daily-opacity-slider">Transparansi gradasi</label>
+                        <span id="daily-opacity-value">65%</span>
+                    </div>
+                    <input id="daily-opacity-slider" type="range" min="10" max="95" value="65" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
+                    <p id="daily-wind-status" class="text-slate-400 mt-1.5"></p>
+                </div>
+            </section>
+
+            <!-- TAB 1: MANAJEMEN 3 KELOMPOK LAYER WAJIB KAK -->
+            <div id="tab-content-layers" class="flex-1 overflow-y-auto p-4 space-y-4">
+                
+                <!-- Kelompok Layer 1: Parameter Masukan Model -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                            <i class="fas fa-fire"></i> 1. Parameter Masukan
+                        </span>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">Input</span>
+                    </div>
+                    <div class="space-y-2.5 text-xs">
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-hotspots" checked class="rounded border-slate-600 text-orange-500 focus:ring-0 bg-slate-800">
+                                Titik Api & FRP (VIIRS/FIRMS)
+                            </span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                        </label>
+                        <label class="manual-only-layer flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-burned" checked class="rounded border-slate-600 text-orange-500 focus:ring-0 bg-slate-800">
+                                Area Terbakar (MCD64A1)
+                            </span>
+                            <span class="w-2.5 h-2.5 rounded-sm bg-amber-800 border border-amber-500 inline-block"></span>
+                        </label>
+                        <label class="manual-only-layer flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-wind" checked class="rounded border-slate-600 text-orange-500 focus:ring-0 bg-slate-800">
+                                Vektor Angin Permukaan (ERA5)
+                            </span>
+                            <i class="fas fa-location-arrow text-cyan-400 text-[10px]"></i>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Kelompok Layer 2: Hasil Model & Validasi -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-xs font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                            <i class="fas fa-smog"></i> 2. Hasil Model & Validasi
+                        </span>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">Output</span>
+                    </div>
+                    <div class="space-y-2.5 text-xs">
+                        <label class="manual-only-layer flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-plume" checked class="rounded border-slate-600 text-teal-500 focus:ring-0 bg-slate-800">
+                                Dispersi Asap PM2.5 (Plume)
+                            </span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-500 to-yellow-400 inline-block"></span>
+                        </label>
+                        
+                        <!-- Opacity Slider untuk Plume Asap -->
+                        <div class="manual-only-layer pl-5 pt-1 pb-1">
+                            <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                                <span>Transparansi Layer Asap</span>
+                                <span id="plume-opacity-val" class="font-mono text-teal-400">65%</span>
+                            </div>
+                            <input type="range" id="plume-opacity-slider" min="10" max="95" value="65" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                        </div>
+
+                        <label class="manual-only-layer flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-aod" class="rounded border-slate-600 text-teal-500 focus:ring-0 bg-slate-800">
+                                Validasi AOD (Himawari-9/TROPOMI)
+                            </span>
+                            <span class="w-2.5 h-2.5 rounded-sm bg-purple-500/60 border border-purple-400 inline-block"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Kelompok Layer 3: Analisis Dampak -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                            <i class="fas fa-users-viewfinder"></i> 3. Layer Analisis Dampak
+                        </span>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">Eksposur</span>
+                    </div>
+                    <div class="space-y-2.5 text-xs">
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-admin-parents" checked class="rounded border-slate-600 text-indigo-500 focus:ring-0 bg-slate-800">
+                                Batas kota/kabupaten
+                            </span>
+                            <span class="flex gap-0.5">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-violet-300/70 border border-violet-400 inline-block"></span>
+                                <span class="w-2.5 h-2.5 rounded-sm bg-[#a3b18a]/70 border border-[#87966e] inline-block"></span>
+                            </span>
+                        </label>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-admin-districts" checked class="rounded border-slate-600 text-indigo-500 focus:ring-0 bg-slate-800">
+                                Batas distrik
+                            </span>
+                            <span class="w-4 border-t border-emerald-700 inline-block"></span>
+                        </label>
+                        <p id="district-status" class="text-[10px] text-slate-500 pl-6" role="status">Memuat batas distrik BIG…</p>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="flex items-center gap-2 text-slate-300 group-hover:text-white">
+                                <input type="checkbox" id="layer-facilities" checked class="rounded border-slate-600 text-indigo-500 focus:ring-0 bg-slate-800">
+                                Objek Vital (Bandara, RS, Sekolah)
+                            </span>
+                            <i class="fas fa-hospital text-rose-400 text-[11px]"></i>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Info Box Konteks Papua Barat Daya -->
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-[11px] text-amber-200/90 leading-relaxed">
+                    <div class="font-semibold text-amber-400 mb-1 flex items-center gap-1.5">
+                        <i class="fas fa-info-circle"></i> Catatan Wilayah Studi Sorong
+                    </div>
+                    Geometri kota/kabupaten dan distrik mengikuti batas administrasi BIG. Kotak ilustrasi lama tidak lagi digambar; angka penduduk dan paparan tetap estimasi skenario. Plume adalah domain model dan dapat meluas di luar batas administrasi.
+                </div>
+            </div>
+
+            <!-- TAB 2: SIMULASI ON-THE-FLY (NILAI TAMBAH KAK) -->
+            <div id="tab-content-sim" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="bg-teal-500/10 border border-teal-500/30 rounded-xl p-3 text-xs text-teal-200">
+                    <p class="font-semibold text-teal-400 mb-1"><i class="fas fa-bolt"></i> Pemodelan Dispersi Real-Time</p>
+                    <p class="text-[11px] text-slate-300">Ubah parameter meteorologi & emisi di bawah, atau <b>klik langsung di peta</b> untuk menambahkan sumber titik api baru.</p>
+                </div>
+
+                <!-- Parameter 1: Arah Angin -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-xs font-medium text-slate-300">Arah Angin (Bertiup Ke)</label>
+                        <span id="wind-dir-display" class="text-xs font-mono font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded">315° (Barat Laut)</span>
+                    </div>
+                    <input type="range" id="sim-wind-dir" min="0" max="360" value="315" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                    <div class="flex justify-between text-[10px] text-slate-500">
+                        <span>0° (U)</span>
+                        <span>90° (T)</span>
+                        <span>180° (S)</span>
+                        <span>270° (B)</span>
+                        <span>360°</span>
+                    </div>
+                </div>
+
+                <!-- Parameter 2: Kecepatan Angin -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-xs font-medium text-slate-300">Kecepatan Angin (u)</label>
+                        <span id="wind-speed-display" class="text-xs font-mono font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded">6.5 m/s</span>
+                    </div>
+                    <input type="range" id="sim-wind-speed" min="1" max="15" step="0.5" value="6.5" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                    <p class="text-[10px] text-slate-400">Angin kencang memperpanjang jangkauan plume asap hingga ke pesisir Kota Sorong.</p>
+                </div>
+
+                <!-- Parameter 3: Intensitas Emisi (FRP) -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-xs font-medium text-slate-300">Faktor Emisi FRP</label>
+                        <span id="frp-mult-display" class="text-xs font-mono font-bold text-orange-400 bg-orange-950 px-2 py-0.5 rounded">1.0x (Normal)</span>
+                    </div>
+                    <input type="range" id="sim-frp-mult" min="0.5" max="2.5" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
+                    <p class="text-[10px] text-slate-400">Meningkatkan konsentrasi dasar PM2.5 ($\mu g/m^3$) pada pusat kepulan asap.</p>
+                </div>
+
+                <!-- Mode Tambah Titik Api -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-200">Tambah Titik Api Interaktif</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="add-fire-mode" class="sr-only peer">
+                            <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600"></div>
+                        </label>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Aktifkan tombol di atas lalu klik lokasi mana saja di peta untuk mensimulasikan hotspot baru.</p>
+                    <button id="reset-sim-btn" class="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-300 transition flex items-center justify-center gap-1.5">
+                        <i class="fas fa-undo"></i> Reset ke Data Dasar Kejadian
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ==================== 3. CENTER MAP CANVAS + BOTTOM TIME SLIDER ==================== -->
+        <main class="flex-1 flex flex-col relative h-full">
+            <!-- Map Container -->
+            <div id="map" class="flex-1 w-full h-full z-10 bg-slate-950"></div>
+
+            <!-- Toast Notification (Pengganti alert) -->
+            <div id="toast-msg" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-teal-500/50 text-teal-300 px-4 py-2 rounded-full text-xs font-medium shadow-xl flex items-center gap-2 transition-all">
+                <i class="fas fa-check-circle text-teal-400"></i>
+                <span id="toast-text">Simulasi diperbarui</span>
+            </div>
+
+            <!-- Compass / North Arrow Overlay (Kiri Atas di bawah zoom) -->
+            <div class="absolute top-2 right-3 z-20 bg-slate-900/85 backdrop-blur border border-slate-700/80 w-10 h-10 rounded-full flex items-center justify-center shadow-lg pointer-events-none" title="Arah Utara">
+                <div class="text-center leading-none">
+                    <div class="text-[9px] font-bold text-red-500">U</div>
+                    <i class="fas fa-compass text-slate-300 text-sm"></i>
+                </div>
+            </div>
+
+            <!-- Koordinat Kursor Real-Time (Kiri Bawah di atas Time Slider) -->
+            <div class="absolute bottom-20 left-3 z-20 bg-slate-900/85 backdrop-blur border border-slate-700/80 px-3 py-1.5 rounded-lg text-[11px] font-mono text-slate-300 shadow-lg pointer-events-none">
+                <i class="fas fa-crosshairs text-teal-400 mr-1.5"></i>
+                <span id="cursor-coords">-0.9450°, 131.3150°</span>
+            </div>
+
+            <!-- Legenda batas administrasi dan PM2.5 (Kanan Bawah di atas Time Slider) -->
+            <div class="absolute bottom-20 right-3 z-20 bg-slate-900/90 backdrop-blur border border-slate-700/80 p-3 rounded-xl shadow-xl max-w-[230px] max-h-[70%] overflow-y-auto">
+                <div class="border-b border-slate-700 pb-2 mb-2">
+                    <div class="flex items-center gap-2 text-[10px] font-semibold text-amber-200 mb-1">
+                        <span class="flex w-4 h-3 border border-slate-300/70 rounded-sm overflow-hidden">
+                            <span class="flex-1 bg-violet-300/70 border-r border-violet-500"></span>
+                            <span class="flex-1 bg-[#a3b18a]/70 border-l border-[#74835b]"></span>
+                        </span>
+                        Batas wilayah kajian · BIG
+                    </div>
+                    <div class="space-y-1 text-[9px] text-slate-300">
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-violet-300/70 border-2 border-violet-500 inline-block"></span>Kota Sorong</div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#a3b18a]/70 border-2 border-[#74835b] inline-block"></span>Kabupaten Sorong</div>
+                    </div>
+                    <div class="flex items-center gap-2 text-[9px] text-slate-300 mt-2">
+                        <span class="w-4 border-t border-emerald-400 inline-block"></span>Distrik BIG (zoom dekat)
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-1">Batas administratif, bukan domain model atau poligon skenario.</p>
+                    <p id="admin-parent-status" class="hidden text-[9px] text-amber-200 mt-1.5" role="status"></p>
+                </div>
+                <div id="manual-plume-legend">
+                <div class="text-[11px] font-bold text-slate-200 mb-2 flex items-center justify-between">
+                    <span>Konsentrasi PM2.5 (ISPU)</span>
+                    <span class="text-[9px] text-slate-400 font-normal">$\mu g/m^3$</span>
+                </div>
+                <div class="space-y-1.5 text-[10px]">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded bg-[#7f1d1d]/85 border border-red-400 shrink-0"></span>
+                        <span class="text-slate-300"><b>> 250</b> (Berbahaya)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded bg-[#dc2626]/75 border border-red-400 shrink-0"></span>
+                        <span class="text-slate-300"><b>150 - 250</b> (Sangat Tdk Sehat)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded bg-[#f97316]/65 border border-orange-300 shrink-0"></span>
+                        <span class="text-slate-300"><b>55 - 150</b> (Tidak Sehat)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded bg-[#eab308]/50 border border-yellow-200 shrink-0"></span>
+                        <span class="text-slate-300"><b>15 - 55</b> (Sedang)</span>
+                    </div>
+                </div>
+                <p class="text-[9px] leading-snug text-slate-400 mt-2 border-t border-slate-700 pt-2">Plume = domain model dan bukan batas administrasi. Estimasi penduduk tetap berbasis skenario.</p>
+                </div>
+                <div id="daily-plume-legend" class="hidden">
+                    <div class="text-[10px] font-semibold text-slate-100 mb-1">Intensitas relatif · simulasi ilustratif</div>
+                    <div class="daily-smoke-gradient h-3 rounded border border-white/30"></div>
+                    <div class="flex justify-between text-[9px] text-slate-300 mt-1"><span>Rendah</span><span>Tinggi</span></div>
+                    <p class="text-[9px] text-slate-400 mt-1">Satu skala tetap selama pemutaran; bukan konsentrasi PM2,5.</p>
+                </div>
+            </div>
+
+            <!-- ==================== FOOTER: TIME SLIDER ==================== -->
+            <div id="manual-timebar" class="h-16 bg-slate-900/95 border-t border-slate-800 px-4 flex items-center gap-4 z-20 shrink-0">
+                <button id="play-time-btn" class="w-9 h-9 rounded-full bg-teal-600 hover:bg-teal-500 text-white flex items-center justify-center shadow-md transition shrink-0" title="Putar Dinamika Temporal">
+                    <i id="play-icon" class="fas fa-play text-xs ml-0.5"></i>
+                </button>
+                
+                <div class="flex-1 flex flex-col justify-center">
+                    <div class="flex justify-between items-center text-xs mb-1">
+                        <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                            <i class="far fa-clock text-teal-400"></i>
+                            <span id="time-label">Hari ke-3 • Pukul 14:00 WIT (Angin Laut Menguat)</span>
+                        </span>
+                        <span class="text-[11px] text-slate-400 hidden sm:inline">Periode Kejadian Karhutla Kemarau</span>
+                    </div>
+                    <input type="range" id="time-slider" min="0" max="6" value="3" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                </div>
+            </div>
+            <div id="daily-timebar" class="hidden min-h-20 bg-slate-900/95 border-t border-slate-800 px-3 sm:px-4 py-2 z-20 shrink-0">
+                <div class="flex items-center justify-between gap-2 text-[10px] text-amber-200 mb-1">
+                    <span class="font-semibold">Periode kajian karhutla · 21 September–15 Oktober 2026</span>
+                    <label class="flex items-center gap-1.5 text-slate-300">
+                        <span class="sr-only">Tanggal WIT</span>
+                        <input id="daily-date-picker" type="date" min="2026-09-21" max="2026-10-15" value="2026-09-21" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-[10px] text-slate-100">
+                    </label>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="daily-prev-btn" type="button" class="px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-slate-100 text-[10px] hover:bg-slate-700" aria-label="Tanggal sebelumnya">Sebelumnya</button>
+                    <button id="daily-play-btn" type="button" class="min-w-20 px-2.5 py-1.5 rounded bg-[#8c412c] text-white text-[10px] font-semibold hover:bg-[#a54e32]" aria-label="Putar perkembangan harian">Play</button>
+                    <button id="daily-next-btn" type="button" class="px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-slate-100 text-[10px] hover:bg-slate-700" aria-label="Tanggal berikutnya">Berikutnya</button>
+                    <div class="flex-1 min-w-20">
+                        <div id="daily-date-label" class="text-[10px] text-slate-200 text-center mb-1">21 September 2026 · Hari 1 dari 25</div>
+                        <input id="daily-date-slider" type="range" min="0" max="24" step="1" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500" aria-label="Pilih hari perkembangan">
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ==================== 4. RIGHT SIDEBAR (DASHBOARD STATISTIK DAMPAK) ==================== -->
+        <aside id="right-sidebar" class="w-80 sm:w-96 bg-slate-900/95 backdrop-blur-md border-l border-slate-800 flex flex-col z-20 transition-all duration-300 hidden xl:flex absolute right-0 xl:relative h-full">
+            <div class="p-3.5 border-b border-slate-800 flex items-center justify-between shrink-0">
+                <h2 id="right-sidebar-title" class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                    <i class="fas fa-chart-pie text-teal-400"></i> Ringkasan Analisis Dampak
+                </h2>
+                <button id="close-right-sidebar" class="xl:hidden text-slate-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div id="manual-analysis-content" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- KPI Cards Grid -->
+                <div class="grid grid-cols-2 gap-2.5">
+                    <!-- KPI 1: Penduduk Terpapar -->
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1">Penduduk Terpapar (>55 µg/m³)</div>
+                        <div id="kpi-pop" class="text-lg font-bold text-orange-400">84.250</div>
+                        <div class="text-[10px] text-slate-500 mt-0.5">Jiwa di zona Tidak Sehat</div>
+                    </div>
+
+                    <!-- KPI 2: Visibilitas Bandara DEO -->
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1">Bandara Domine Eduard Osok</div>
+                        <div id="kpi-airport" class="text-sm font-bold text-amber-400 mt-0.5">WASPADA (2.8 km)</div>
+                        <div id="kpi-airport-pm" class="text-[10px] text-slate-400 mt-0.5">PM2.5: 92 µg/m³</div>
+                    </div>
+
+                    <!-- KPI 3: Faskes Terdampak -->
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1">Fasilitas Kesehatan</div>
+                        <div id="kpi-health" class="text-lg font-bold text-rose-400">4 <span class="text-xs font-normal text-slate-400">/ 6 Unit</span></div>
+                        <div class="text-[10px] text-slate-500 mt-0.5">RSUD & Puskesmas terpapar</div>
+                    </div>
+
+                    <!-- KPI 4: Sekolah Terdampak -->
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1">Fasilitas Pendidikan</div>
+                        <div id="kpi-school" class="text-lg font-bold text-yellow-400">18 <span class="text-xs font-normal text-slate-400">Sekolah</span></div>
+                        <div class="text-[10px] text-slate-500 mt-0.5">Rekomendasi belajar daring</div>
+                    </div>
+                </div>
+
+                <!-- Grafik Batang Konsentrasi PM2.5 per Distrik -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-semibold text-slate-200">Estimasi PM2.5 Tertinggi per Distrik</h3>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <div class="h-44 w-full">
+                        <canvas id="districtChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tabel Daftar Objek Vital & Status Kualitas Udara -->
+                <div class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <h3 class="text-xs font-semibold text-slate-200 mb-2.5">Status Objek Vital & Infrastruktur</h3>
+                    <div id="vital-list" class="space-y-2 text-xs max-h-44 overflow-y-auto pr-1">
+                        <!-- Diisi dinamis oleh JS -->
+                    </div>
+                </div>
+
+                <!-- Tombol Unduh Hasil Model (GeoJSON) -->
+                <div class="pt-1">
+                    <button id="export-geojson-btn" class="w-full py-2.5 px-4 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-teal-900/30 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-download"></i> Unduh poligon skenario ilustratif (GeoJSON)
+                    </button>
+                </div>
+            </div>
+            <div id="daily-analysis-content" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+                <section class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <h3 class="text-xs font-semibold text-amber-200 mb-2">Ringkasan kejadian harian</h3>
+                    <p id="daily-summary-date" class="text-[11px] text-slate-300"></p>
+                    <p id="daily-summary-region" class="text-[11px] text-slate-300 mt-1"></p>
+                    <p id="daily-summary-source" class="text-[10px] text-slate-400 mt-2"></p>
+                </section>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 mb-1">Kota Sorong</div>
+                        <div id="daily-city-count" class="text-sm font-bold text-violet-200">Data hotspot belum tersedia</div>
+                    </div>
+                    <div class="bg-slate-850 border border-slate-800 rounded-xl p-3">
+                        <div class="text-[10px] text-slate-400 mb-1">Kabupaten Sorong</div>
+                        <div id="daily-county-count" class="text-sm font-bold text-emerald-200">Data hotspot belum tersedia</div>
+                    </div>
+                </div>
+                <section class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 id="daily-chart-title" class="text-xs font-semibold text-slate-200">Deteksi hotspot · hari terpilih</h3>
+                        <span class="text-[10px] text-slate-400">rekaman</span>
+                    </div>
+                    <div class="h-40 w-full"><canvas id="dailyChart"></canvas></div>
+                    <p class="text-[9px] text-slate-400 mt-2">Angka adalah rekaman dalam berkas, bukan konfirmasi cakupan satelit atau jumlah kejadian sebenarnya.</p>
+                </section>
+                <section class="bg-slate-850 border border-slate-800 rounded-xl p-3.5">
+                    <h3 class="text-xs font-semibold text-slate-200 mb-1">Fasilitas dan hasil model</h3>
+                    <p id="daily-facility-status" class="text-[10px] text-slate-300">Nilai fasilitas harian belum tersedia.</p>
+                    <p id="daily-model-status" class="text-[10px] text-amber-200 mt-2">Hasil HYSPLIT belum tersedia untuk tanggal ini.</p>
+                </section>
+                <button id="daily-export-btn" type="button" class="w-full py-2.5 px-4 bg-[#8c412c] hover:bg-[#a54e32] text-white font-semibold text-xs rounded-xl transition">
+                    Unduh hotspot harian (GeoJSON)
+                </button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- ==================== MODAL: METODOLOGI & KETIDAKPASTIAN ==================== -->
+    <div id="methodology-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center">
+                        <i class="fas fa-flask"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-white">Metodologi Pemodelan & Diskusi Ketidakpastian</h3>
+                        <p class="text-[11px] text-slate-400">Sesuai Kerangka Acuan Kerja PjBL SIG 2026 (GD4103 ITB)</p>
+                    </div>
+                </div>
+                <button id="close-methodology-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="p-5 overflow-y-auto space-y-4 text-xs text-slate-300 leading-relaxed">
+                <div>
+                    <h4 class="font-bold text-teal-400 mb-1">1. Formulasi Model Dispersi Asap (Gaussian Plume & Angin-Jarak)</h4>
+                    <p>Sebaran konsentrasi partikulat halus ($PM_{2.5}$) dimodelkan dari sumber emisi titik api aktif (<b>NASA FIRMS VIIRS 375m</b>) menggunakan pendekatan dispersi adveksi-difusi sederhana yang dipengaruhi oleh vektor kecepatan angin ($u$), arah angin ($\theta$), dan intensitas daya radiasi api (<i>Fire Radiative Power</i> / FRP). Simulasi <i>on-the-fly</i> menghitung ulang geometri poligon plume secara real-time saat parameter diubah.</p>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-teal-400 mb-1">2. Validasi Spasial & Strategi Keterbatasan Data di Papua Barat Daya</h4>
+                    <p>Sebagaimana dicatat dalam KAK, ketersediaan stasiun pemantau kualitas udara permukaan (ISPU/AQMS) di wilayah Papua relatif terbatas dibandingkan Sumatera dan Kalimantan. Untuk mengatasi celah data tersebut, model divalidasi secara spasial menggunakan citra satelit <b>Aerosol Optical Depth (AOD) Himawari-8/9</b> dan <b>Sentinel-5P TROPOMI</b> serta pencocokan catatan jarak pandang (<i>visibility</i>) dari Stasiun Meteorologi BMKG Bandara Domine Eduard Osok (DEO) Sorong.</p>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-amber-400 mb-1">3. Ketidakpastian Model</h4>
+                    <ul class="list-disc pl-4 space-y-1 text-slate-400">
+                        <li><b>Tutupan Awan & Asap Tebal:</b> Sensor optik satelit (VIIRS/AOD) dapat mengalami bias deteksi saat tutupan awan konvektif tinggi di pesisir Sorong.</li>
+                        <li><b>Variasi Topografi Lokal:</b> Efek angin darat-angin laut di pesisir Kota Sorong dan perbukitan di bagian utara memengaruhi pembelokan plume yang belum sepenuhnya tertangkap oleh model 2D homogen.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-800 flex justify-end">
+                <button id="close-methodology-btn-2" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-lg transition">
+                    Mengerti & Kembali ke Peta
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== JAVASCRIPT LOGIC ==================== -->
+    <script src="data-skenario.js"></script>
+    <script src="interaksi.js"></script>
+</body>
+</html>
